@@ -49,7 +49,85 @@ def clean_campaign_data():
 
 
     """
-
+    import os
+    import zipfile
+    import pandas as pd
+    import glob
+    
+    # Create output directory if it doesn't exist
+    os.makedirs("files/output", exist_ok=True)
+    
+    # Initialize lists to store data from all files
+    all_data = []
+    
+    # Process all zip files in the input directory
+    zip_files = glob.glob("files/input/*.csv.zip")
+    zip_files.sort()  # Ensure consistent order
+    
+    for zip_file in zip_files:
+        with zipfile.ZipFile(zip_file, 'r') as z:
+            # Get the first (and likely only) CSV file in the zip
+            csv_name = z.namelist()[0]
+            with z.open(csv_name) as f:
+                df = pd.read_csv(f)
+                all_data.append(df)
+    
+    # Combine all data
+    combined_df = pd.concat(all_data, ignore_index=True)
+    
+    # Remove the 'Unnamed: 0' column if it exists (index column)
+    if 'Unnamed: 0' in combined_df.columns:
+        combined_df = combined_df.drop('Unnamed: 0', axis=1)
+    
+    # Create client_id as the index
+    combined_df['client_id'] = combined_df.index
+    
+    # ========== CLIENT.CSV ==========
+    client_df = combined_df[['client_id', 'age', 'job', 'marital', 'education', 'credit_default', 'mortgage']].copy()
+    
+    # Clean job field: change "." to "" and "-" to "_"
+    client_df['job'] = client_df['job'].str.replace('.', '', regex=False)
+    client_df['job'] = client_df['job'].str.replace('-', '_', regex=False)
+    
+    # Clean education field: change "." to "_" and "unknown" to pd.NA
+    client_df['education'] = client_df['education'].str.replace('.', '_', regex=False)
+    client_df['education'] = client_df['education'].replace('unknown', pd.NA)
+    
+    # Convert credit_default: "yes" to 1, everything else to 0
+    client_df['credit_default'] = (client_df['credit_default'] == 'yes').astype(int)
+    
+    # Convert mortgage: "yes" to 1, everything else to 0
+    client_df['mortgage'] = (client_df['mortgage'] == 'yes').astype(int)
+    
+    # ========== CAMPAIGN.CSV ==========
+    campaign_df = combined_df[['client_id', 'number_contacts', 'contact_duration', 
+                              'previous_campaign_contacts', 'previous_outcome', 
+                              'campaign_outcome', 'day', 'month']].copy()
+    
+    # Convert previous_outcome: "success" to 1, everything else to 0
+    campaign_df['previous_outcome'] = (campaign_df['previous_outcome'] == 'success').astype(int)
+    
+    # Convert campaign_outcome: "yes" to 1, everything else to 0
+    campaign_df['campaign_outcome'] = (campaign_df['campaign_outcome'] == 'yes').astype(int)
+    
+    # Create last_contact_date with format "YYYY-MM-DD" using 2022 as year
+    campaign_df['last_contact_date'] = pd.to_datetime(
+        campaign_df['day'].astype(str) + '-' + 
+        campaign_df['month'].astype(str) + '-2022', 
+        format='%d-%b-%Y'
+    ).dt.strftime('%Y-%m-%d')
+    
+    # Drop the original day and month columns
+    campaign_df = campaign_df.drop(['day', 'month'], axis=1)
+    
+    # ========== ECONOMICS.CSV ==========
+    economics_df = combined_df[['client_id', 'cons_price_idx', 'euribor_three_months']].copy()
+    
+    # Save all files
+    client_df.to_csv("files/output/client.csv", index=False)
+    campaign_df.to_csv("files/output/campaign.csv", index=False)
+    economics_df.to_csv("files/output/economics.csv", index=False)
+    
     return
 
 
